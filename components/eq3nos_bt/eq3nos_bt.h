@@ -113,6 +113,7 @@ class EQ3NOS
         void publish_recovery_counter_sensor(uint16_t rc_);
 
         // ----- Internal messaging -----
+        void cancel_ble_transaction();
         void send_command_to_ble_transport(const ConnCommand &cmd);
 		void send_replay_to_control(const std::vector<uint8_t> &msg);
 
@@ -168,6 +169,7 @@ protected:
 
 private:
 		EQ3NOSBLE ble_transport_;
+        uint32_t last_attempt_{0};
         bool module_to_init = true;
         bool ble_client_init_error = false;
       

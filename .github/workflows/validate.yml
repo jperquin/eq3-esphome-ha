@@ -1,0 +1,23 @@
+name: Validate EQ3 component
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  session-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: g++ -std=c++17 -Wall -Wextra -Werror -I components/eq3nos_bt tests/session_test.cpp -o /tmp/session-test && /tmp/session-test
+  esphome:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [esp32, esp32-s3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install esphome==2026.10.0
+      - run: esphome compile tests/fixtures/${{ matrix.target }}.yaml

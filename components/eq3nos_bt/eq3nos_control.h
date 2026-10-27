@@ -7,6 +7,7 @@
 #include <sstream>
 #include <iomanip>
 #include "eq3nos_adapters.h"
+#include "eq3nos_session.h"
 #include "esphome/components/text_sensor/text_sensor.h"
 #include "esphome/components/time/real_time_clock.h"
 
@@ -28,8 +29,6 @@
 /// @brief Seconds between periodic information queries.
 #define NORMALQUERY 300
 
-/// @brief Maximum recovery timeout (in seconds) before resetting busy state.
-#define RECOVERY_MAX_TIME 20
 
 /**
  * @brief Operating mode reported by the EQ3 valve.
@@ -162,6 +161,8 @@ class EQ3Control {
 
         /// @brief Force a status update workflow.
         void update_status();
+        bool request_identification();
+        void transport_failed(const char *reason);
 
         // High-level command helpers     
         void cmd_set_mode(Eq3Mode mode);
@@ -172,7 +173,7 @@ class EQ3Control {
         void increment_timer_applic();
 
     protected:  
-        void rcvd_get_info();
+        bool rcvd_get_info();
         uint8_t eq3_valve_status_;
         void set_eq3_time();
         
@@ -180,7 +181,7 @@ class EQ3Control {
 
 		EQ3NOS *parent_{nullptr};   // puntatore al "padre" (EQ3NOS)	
 		QueueHandle_t application_queue_{nullptr};
-		ApplicationStatus application_status_;
+		ApplicationStatus application_status_ = ApplicationStatus::APP_WAIT;
         Eq3StatusResponse  valve_base_status_;
         int app_dequeuer(); 
         void send_mode(Eq3Mode mode);   
@@ -202,6 +203,9 @@ class EQ3Control {
 		uint32_t timer_ora = 0;
 		uint32_t timer_query = 0;
         uint32_t timer_recovery = 0;
+        uint32_t command_started_ms_{0};
+        bool identification_queued_{false};
+        IdentificationRetry identification_retry_;
         uint32_t recovery_counter = 0;
         std::vector<uint8_t> local_msg;
         int local_msg_size = 15;

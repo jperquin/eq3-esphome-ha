@@ -1,5 +1,7 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
+.esphome/
+secrets.yaml
 *.py[codz]
 *$py.class
 
@@ -205,3 +207,7 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# macOS metadata
+._*
+.DS_Store

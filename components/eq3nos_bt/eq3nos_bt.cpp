@@ -44,10 +44,11 @@ void EQ3NOS::loop() {
     if(this->module_to_init == true)
         module_init();
     
-    static uint32_t last_attempt = 0;
+    // Per-instance timer: multiple valves must not share a polling gate.
+
     
-	if (millis() - last_attempt < 1000) return; // timer 1 secondo
-    last_attempt = millis();
+	if (millis() - last_attempt_ < 1000) return; // timer 1 secondo
+    last_attempt_ = millis();
    
     this->control_.increment_timer_applic();
     this->ble_transport_.increment_timer_connect();
@@ -60,6 +61,7 @@ void EQ3NOS::send_command_to_ble_transport(const ConnCommand &cmd ) {
 		//this->get_eq3_time();
     EQ3_D(TAG, "Received command from application");
     bool error = ble_transport_.command_queuer(cmd);  
+    if (!error) control_.transport_failed("BLE command queue unavailable");
     EQ3_D(TAG, "%s command to connection.", error? "queued": "not queued" ); 
 }
 
@@ -68,6 +70,8 @@ void EQ3NOS::send_replay_to_control(const std::vector<uint8_t> &msg) {
     this->control_.handle_incoming_message(msg);
     EQ3_D(TAG, "replay received from application" ); 
 }
+
+void EQ3NOS::cancel_ble_transaction() { ble_transport_.cancel_transaction(); }
 
 // =================== MODE SELECTOR ===================
 void EQ3ModeSelect::control(const std::string &value) {
@@ -222,6 +226,7 @@ void EQ3NOS::publish_base_field(uint8_t vp, float tt,  Eq3Mode mode, bool lm, bo
 }
 
 esphome::ESPTime EQ3NOS::get_eq3_time(){
+    if (time_source_ == nullptr) return {};
 	auto now = time_source_->now();
 	EQ3_D(TAG, "Time now: %04d-%02d-%02d %02d:%02d:%02d",
          now.year, now.month, now.day_of_month,
