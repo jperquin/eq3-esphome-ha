@@ -21,11 +21,11 @@ void EQ3NOSBLE::on_ble_event(esp_gattc_cb_event_t event,
                                  esp_gatt_if_t gatt_if,
                                  esp_ble_gattc_cb_param_t *param) {
 	switch (event) {
-		case ESP_GATTC_CONNECT_EVT: {break;} //EQ3_D(TAG, "I2NOS --> Callback - 🔍 ESP_GATTC_CONNECT_EVT");
-		case ESP_GATTC_OPEN_EVT: {break;} //EQ3_D(TAG, "I2NOS --> Callback - 🔍 ESP_GATTC_OPEN_EVT");
-		case ESP_GATTC_SEARCH_RES_EVT: {break;} //EQ3_D(TAG, "I2NOS --> Callback - 🔍 ESP_GATTC_OPEN_EVT");
+		case ESP_GATTC_CONNECT_EVT: {break;} //EQ3_D(TAG, "I2NOS --> Callback - ESP_GATTC_CONNECT_EVT");
+		case ESP_GATTC_OPEN_EVT: {break;} //EQ3_D(TAG, "I2NOS --> Callback - ESP_GATTC_OPEN_EVT");
+		case ESP_GATTC_SEARCH_RES_EVT: {break;} //EQ3_D(TAG, "I2NOS --> Callback - ESP_GATTC_OPEN_EVT");
 		case ESP_GATTC_CFG_MTU_EVT: {break;} //EQ3_D(TAG, "MTU configurato: %d (status=%d)", param->cfg_mtu.mtu, param->cfg_mtu.status);
-		case ESP_GATTC_REG_FOR_NOTIFY_EVT: {break;} //EQ3_D(TAG, "status=%d handle=0x%04x", param->reg_for_notify.status, param->reg_for_notify.handle);
+		case ESP_GATTC_REG_FOR_NOTIFY_EVT: {break;} //EQ3_D(TAG, "status=%d handle=0x%04x", param->reg_for_notify.handle);
 		case ESP_GATTC_WRITE_DESCR_EVT: {break;} //EQ3_D(TAG, "Descriptor scritto (handle=%04X)", param->write.handle);
 		case ESP_GATTC_WRITE_CHAR_EVT: {break;} //EQ3_D(TAG, "WRITE_CHAR_EVT");
 		case ESP_GATTC_SEARCH_CMPL_EVT: {
@@ -57,20 +57,23 @@ void  EQ3NOSBLE::on_services_resolved_manual() {
 	this->cccd_handle_   = 0x0430;  // descriptor CCCD
 		
      // Crea oggetti "virtuali" per coerenza con il codice esistente
-    this->write_ch_ = new esphome::esp32_ble_client::BLECharacteristic();
-    this->write_ch_->handle = write_handle_;
-    this->notify_ch_ = new esphome::esp32_ble_client::BLECharacteristic();
-    this->notify_ch_->handle = notify_handle_;
-   
-    this->write_ch_->handle = write_handle_;
-    this->notify_ch_->handle = notify_handle_;
+     // eq3-bench patch E (26-9-2026): allocate once, reuse afterwards.
+     // HEAD allocated two BLECharacteristic objects on every SEARCH_CMPL_EVT
+     // (i.e. per BLE session) and never freed them.
+    if (this->write_ch_ == nullptr) {
+        this->write_ch_ = new esphome::esp32_ble_client::BLECharacteristic();
+        this->write_ch_->handle = write_handle_;
+    }
+    if (this->notify_ch_ == nullptr) {
+        this->notify_ch_ = new esphome::esp32_ble_client::BLECharacteristic();
+        this->notify_ch_->handle = notify_handle_;
+    }
     
     this->resolved = true;
 
    // EQ3_D(TAG, "Caratteristiche inizializzate manualmente: write=0x%04X notify=0x%04X",
     //         this->write_ch_->handle, this->notify_ch_->handle);
     return;
-   // ESP_LOGW(TAG, "write_ch_=%p handle=%04X", this->write_ch_, this->write_ch_ ? this->write_ch_->handle : 0);
 }
 
 void EQ3NOSBLE::after_connected_() {
@@ -88,8 +91,8 @@ void EQ3NOSBLE::after_connected_() {
 
     // 1) Registriamo la notifica
     esp_err_t err = esp_ble_gattc_register_for_notify(
-        cli->get_gattc_if(),      // ← COME send_command
-        base->remote_bda_,        // ← unico campo non pubblico
+        cli->get_gattc_if(),      // come send_command
+        base->remote_bda_,        // unico campo non pubblico
         this->notify_handle_
     );
 
@@ -102,8 +105,8 @@ void EQ3NOSBLE::after_connected_() {
     uint8_t notify_en[2] = {0x01, 0x00};
 
     err = esp_ble_gattc_write_char_descr(
-        cli->get_gattc_if(),      // ← COME send_command
-        cli->get_conn_id(),       // ← COME send_command
+        cli->get_gattc_if(),      // come send_command
+        cli->get_conn_id(),       // come send_command
         this->cccd_handle_,
         sizeof(notify_en),
         notify_en,
@@ -252,7 +255,7 @@ void  EQ3NOSBLE::session_Processor(){
             connection_status_ = ConnectionStatus::WAIT_REPLAY;
             //EQ3_D(TAG, "Invio comando");
         break;
-        case ConnectionStatus::AFTER_CONNECTED:  
+    	case ConnectionStatus::AFTER_CONNECTED:  
             this->after_connected_();
             connection_status_ = ConnectionStatus::SEND_COMMAND; 
            // EQ3_D(TAG, "Abitito notify");
@@ -386,6 +389,5 @@ void EQ3NOSBLE::set_parent(EQ3NOS *parent) {
 }
 
 
-}  // namespace eq3nos_bt
+}  // namespace eq3nos
 }  // namespace esphome
-

@@ -14,4 +14,3 @@
   #define EQ3_V(tag, fmt, ...) do {} while (0)
   #define EQ3_DEV(stmt) do {} while (0)
 #endif
-

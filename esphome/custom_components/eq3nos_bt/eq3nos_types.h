@@ -18,4 +18,3 @@ struct ConnCommand {
 
 }  // namespace eq3nos_bt
 }  // namespace esphome
-

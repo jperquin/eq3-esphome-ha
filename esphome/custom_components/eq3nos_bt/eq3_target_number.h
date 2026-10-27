@@ -16,5 +16,3 @@ class EQ3TargetNumber : public number::Number {
 
 }  // namespace eq3nos_bt
 }  // namespace esphome
-
-

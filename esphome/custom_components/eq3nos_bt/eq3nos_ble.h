@@ -82,7 +82,7 @@ public:
     void on_ble_event(esp_gattc_cb_event_t event,
 	    esp_gatt_if_t gatt_if,
         esp_ble_gattc_cb_param_t *param);
-    
+
     /**
      * @brief Assign EQ3 GATT handles manually when discovery is unreliable.
      *
@@ -171,4 +171,3 @@ private:
 
 }  // namespace eq3nos
 }  // namespace esphome
-

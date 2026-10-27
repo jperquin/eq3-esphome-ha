@@ -27,8 +27,6 @@ void EQ3NOS::setup() {
     ble_transport_.set_parent(this);      // parent per callback di connessione
     ble_transport_.con_task_init();
     
-    sync_target_temperature = true;  // sincronizza il display della temperatura target
-
     this->module_to_init = true;
 }
 
@@ -209,11 +207,12 @@ void EQ3NOS::publish_base_field(uint8_t vp, float tt,  Eq3Mode mode, bool lm, bo
         battery_low_sensor_->publish_state(this->battery_low);
     }
     
-    if(sync_target_temperature){
-        if (target_number_ != nullptr) {
-        sync_target_temperature = false;
+    // eq3-bench patch A (26-9-2026): number echo is niet meer one-shot.
+    // Elke bevestigde status-frame publiceert de target naar de number,
+    // zodat MQTT-discovery state_topic == sensor/target state_topic en de
+    // HA-side discovery-remap niet meer nodig is.
+    if (target_number_ != nullptr) {
         target_number_->publish_state(this->target_temperature);
-        }
     }
 
     watchdog_state_ = !watchdog_state_;
@@ -232,4 +231,3 @@ esphome::ESPTime EQ3NOS::get_eq3_time(){
 
 }  // namespace eq3nos_bt
 }  // namespace esphome
-

@@ -103,7 +103,7 @@ struct Eq3SetTime {
 #pragma pack(push, 1)
 struct Eq3StatusResponse {
     uint8_t replaycode;         ///< Typically 0x02.
-    uint8_t always1;            ///< Typically 0x01.
+    uint8_t always1;            ///< Typically 0x1.
     uint8_t mode;               ///< Raw mode value (see Eq3Mode).
     uint8_t valve_percent;      ///< Valve position in percent (0–100).
     uint8_t unknown;            ///< Unknown/reserved.
@@ -204,11 +204,10 @@ class EQ3Control {
         uint32_t timer_recovery = 0;
         uint32_t recovery_counter = 0;
         std::vector<uint8_t> local_msg;
-        int local_msg_size = 0;
+        int local_msg_size = 15;
         bool rcv_msg_ready = false;
 		  
 };
 
 }  // namespace eq3nos_bt
 }  // namespace esphome
-
