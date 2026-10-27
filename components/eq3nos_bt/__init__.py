@@ -145,7 +145,7 @@ async def to_code(config):
         # ---- BINARY ----
         for key, label, setter in [
             (CONF_BATTERY,  "Battery Low", var.set_battery_low_sensor),
-            (CONF_WATCHDOG,"Watchdog",    var.set_watchdog_sensor),
+            (CONF_WATCHDOG, "Watchdog",    var.set_watchdog_sensor),
         ]:
             if key in conf:
                 conf[key][CONF_NAME] = full_name(conf, label)

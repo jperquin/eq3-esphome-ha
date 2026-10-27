@@ -21,25 +21,38 @@ void EQ3NOSBLE::on_ble_event(esp_gattc_cb_event_t event,
                                  esp_gatt_if_t gatt_if,
                                  esp_ble_gattc_cb_param_t *param) {
 	switch (event) {
-		case ESP_GATTC_CONNECT_EVT: {break;} //EQ3_D(TAG, "I2NOS --> Callback - 🔍 ESP_GATTC_CONNECT_EVT");
-		case ESP_GATTC_OPEN_EVT: {break;} //EQ3_D(TAG, "I2NOS --> Callback - 🔍 ESP_GATTC_OPEN_EVT");
-		case ESP_GATTC_SEARCH_RES_EVT: {break;} //EQ3_D(TAG, "I2NOS --> Callback - 🔍 ESP_GATTC_OPEN_EVT");
+		case ESP_GATTC_CONNECT_EVT: {break;} //EQ3_D(TAG, "I2NOS --> Callback - ESP_GATTC_CONNECT_EVT");
+		case ESP_GATTC_OPEN_EVT: {break;} //EQ3_D(TAG, "I2NOS --> Callback - ESP_GATTC_OPEN_EVT");
+		case ESP_GATTC_SEARCH_RES_EVT: {break;} //EQ3_D(TAG, "I2NOS --> Callback - ESP_GATTC_OPEN_EVT");
 		case ESP_GATTC_CFG_MTU_EVT: {break;} //EQ3_D(TAG, "MTU configurato: %d (status=%d)", param->cfg_mtu.mtu, param->cfg_mtu.status);
-		case ESP_GATTC_REG_FOR_NOTIFY_EVT: {break;} //EQ3_D(TAG, "status=%d handle=0x%04x", param->reg_for_notify.status, param->reg_for_notify.handle);
+		case ESP_GATTC_REG_FOR_NOTIFY_EVT: {break;} //EQ3_D(TAG, "status=%d handle=0x%04x", param->reg_for_notify.handle);
 		case ESP_GATTC_WRITE_DESCR_EVT: {break;} //EQ3_D(TAG, "Descriptor scritto (handle=%04X)", param->write.handle);
 		case ESP_GATTC_WRITE_CHAR_EVT: {break;} //EQ3_D(TAG, "WRITE_CHAR_EVT");
 		case ESP_GATTC_SEARCH_CMPL_EVT: {
 			this->on_services_resolved_manual();// Evita discovery manuale: usiamo gli handle noti
 			break;		
 		}		
-		case ESP_GATTC_NOTIFY_EVT: {
-			//EQ3_D(TAG, "ricevuto i dati li ruoto per elaborazione, handle=0x%04X len=%d", param->notify.handle, param->notify.value_len);
-			this->last_notify_data_.assign(param->notify.value,	param->notify.value + param->notify.value_len);
-			local_copy = this->last_notify_data_;
-			this->last_notify_data_.clear();
-			this->rcv_replay = true;
-			break;
-		}
+        case ESP_GATTC_NOTIFY_EVT: {
+            const bool awaiting = connection_status_ == ConnectionStatus::SEND_COMMAND ||
+                                  connection_status_ == ConnectionStatus::WAIT_REPLAY;
+            const uint8_t expected = temp_cmd_len && temp_cmd_data[0] == 0x00 ? 0x01 : 0x02;
+            if (!awaiting || rcv_replay || param->notify.handle != notify_handle_ ||
+                param->notify.conn_id != parent_->ble()->get_conn_id() ||
+                param->notify.value_len == 0 || param->notify.value[0] != expected) {
+                EQ3_D(TAG, "Ignoring notification outside the active command");
+                break;
+            }
+            local_copy.assign(param->notify.value, param->notify.value + param->notify.value_len);
+            rcv_replay = true;
+            break;
+        }
+        case ESP_GATTC_DISCONNECT_EVT:
+            resolved = false;
+            if (connection_status_ == ConnectionStatus::DISCONNECTING) {
+                connection_status_ = ConnectionStatus::WAIT_STATE;
+                reset_task_busy();
+            }
+            break;
 		
 		default: {
 		 	EQ3_D(TAG, "-----gattc_event_handler: unhandled event=%d", event);
@@ -57,20 +70,23 @@ void  EQ3NOSBLE::on_services_resolved_manual() {
 	this->cccd_handle_   = 0x0430;  // descriptor CCCD
 		
      // Crea oggetti "virtuali" per coerenza con il codice esistente
-    this->write_ch_ = new esphome::esp32_ble_client::BLECharacteristic();
-    this->write_ch_->handle = write_handle_;
-    this->notify_ch_ = new esphome::esp32_ble_client::BLECharacteristic();
-    this->notify_ch_->handle = notify_handle_;
-   
-    this->write_ch_->handle = write_handle_;
-    this->notify_ch_->handle = notify_handle_;
+     // eq3-bench patch E (26-9-2026): allocate once, reuse afterwards.
+     // HEAD allocated two BLECharacteristic objects on every SEARCH_CMPL_EVT
+     // (i.e. per BLE session) and never freed them.
+    if (this->write_ch_ == nullptr) {
+        this->write_ch_ = new esphome::esp32_ble_client::BLECharacteristic();
+        this->write_ch_->handle = write_handle_;
+    }
+    if (this->notify_ch_ == nullptr) {
+        this->notify_ch_ = new esphome::esp32_ble_client::BLECharacteristic();
+        this->notify_ch_->handle = notify_handle_;
+    }
     
     this->resolved = true;
 
    // EQ3_D(TAG, "Caratteristiche inizializzate manualmente: write=0x%04X notify=0x%04X",
     //         this->write_ch_->handle, this->notify_ch_->handle);
     return;
-   // ESP_LOGW(TAG, "write_ch_=%p handle=%04X", this->write_ch_, this->write_ch_ ? this->write_ch_->handle : 0);
 }
 
 void EQ3NOSBLE::after_connected_() {
@@ -88,8 +104,8 @@ void EQ3NOSBLE::after_connected_() {
 
     // 1) Registriamo la notifica
     esp_err_t err = esp_ble_gattc_register_for_notify(
-        cli->get_gattc_if(),      // ← COME send_command
-        base->remote_bda_,        // ← unico campo non pubblico
+        cli->get_gattc_if(),      // come send_command
+        base->remote_bda_,        // unico campo non pubblico
         this->notify_handle_
     );
 
@@ -102,8 +118,8 @@ void EQ3NOSBLE::after_connected_() {
     uint8_t notify_en[2] = {0x01, 0x00};
 
     err = esp_ble_gattc_write_char_descr(
-        cli->get_gattc_if(),      // ← COME send_command
-        cli->get_conn_id(),       // ← COME send_command
+        cli->get_gattc_if(),      // come send_command
+        cli->get_conn_id(),       // come send_command
         this->cccd_handle_,
         sizeof(notify_en),
         notify_en,
@@ -118,16 +134,15 @@ void EQ3NOSBLE::after_connected_() {
 
 void EQ3NOSBLE::con_task_init(){
 
-    if (!ble_transport_queue_) 
-        ESP_LOGE(TAG, "Failed to create connection queue");
     if (ble_transport_queue_ == nullptr) { 
         ble_transport_queue_ = xQueueCreate(MAX_CONN_QUEUE, sizeof(ConnCommand));
     } 
+   if (!ble_transport_queue_) ESP_LOGE(TAG, "Failed to create connection queue");
    this->connection_status_ = ConnectionStatus::WAIT_STATE;
 } 
 
 // Timer of this task
-void EQ3NOSBLE::increment_timer_connect() { this->timer_connect++; this->ble_transport_watchdog++;}
+void EQ3NOSBLE::increment_timer_connect() { this->timer_connect++;}
 
 // This Task main loop 
 void EQ3NOSBLE::connect_task(){	
@@ -163,6 +178,7 @@ bool EQ3NOSBLE::command_queuer(const ConnCommand &cmd) {
 
 // Async command dequeuer for task ble connection
 int  EQ3NOSBLE::command_dequeuer(){	
+    if (!ble_transport_queue_) return 0;
 
     ConnCommand cmd;
     bool conncommand_received = false;
@@ -193,7 +209,10 @@ void EQ3NOSBLE::session_RAW(const uint8_t *data, size_t len) {
     temp_cmd_len = len;
     this->connection_status_ = ConnectionStatus::START_SESSION;
     this->timer_connect = 0;
-    this->ble_transport_watchdog = 0;
+    this->session_deadline_.start(millis());
+    this->local_copy.clear();
+    this->last_notify_data_.clear();
+    this->rcv_replay = false;
 
 
     /*std::string hex; char buf[6];
@@ -230,29 +249,35 @@ void  EQ3NOSBLE::session_Processor(){
         		//connection_status_ = ConnectionStatus::WAIT_STATE;
             this->disconnect_delay++; 
             if(disconnect_delay > DISCONNECT_NOW) {
-                parent_->ble()->disconnect(); // avvio tentativo 
-                reset_task_busy(); //per sicurezza 
-                EQ3_D(TAG, "Disconnect delay expired");
-                connection_status_ = ConnectionStatus::WAIT_STATE;
+                disconnect_started_ = millis();
+                connection_status_ = ConnectionStatus::DISCONNECTING;
+                parent_->ble()->disconnect();
+                EQ3_D(TAG, "Disconnect requested; waiting for completion");
            }
         break;
         case ConnectionStatus::SEND_REPLAY_TO_APP: 
+            session_deadline_.finish();
             this->send_replay_to_app(); 
             connection_status_ = ConnectionStatus::WAIT_TO_DISCONNECT; 
-            this->reset_task_busy();      
           //  EQ3_D(TAG, "Risposta inviata"); 
         break;
         case ConnectionStatus::WAIT_REPLAY:      
-            if(this->rcv_replay)
+            if(this->rcv_replay) {
+                session_deadline_.finish();
                 connection_status_ = ConnectionStatus::SEND_REPLAY_TO_APP;
+            }
             //EQ3_D(TAG, "Attendo risposta");
         break;
     	case ConnectionStatus::SEND_COMMAND:      
-            this->send_command();
-            connection_status_ = ConnectionStatus::WAIT_REPLAY;
+            if (this->send_command()) {
+                session_deadline_.command_sent(millis());
+                connection_status_ = ConnectionStatus::WAIT_REPLAY;
+            } else {
+                fail_session_("BLE write failed");
+            }
             //EQ3_D(TAG, "Invio comando");
         break;
-        case ConnectionStatus::AFTER_CONNECTED:  
+    	case ConnectionStatus::AFTER_CONNECTED:  
             this->after_connected_();
             connection_status_ = ConnectionStatus::SEND_COMMAND; 
            // EQ3_D(TAG, "Abitito notify");
@@ -289,11 +314,16 @@ void  EQ3NOSBLE::session_Processor(){
             EQ3_D(TAG, "Disconnesso");
         break;
         case ConnectionStatus::CONNECT_ERROR:
-            reset_task_busy();
-            connection_status_ = ConnectionStatus::WAIT_STATE;
-            EQ3_D(TAG, "Connection error");
+            fail_session_("BLE connection lost");
         break;
        
+        case ConnectionStatus::DISCONNECTING:
+            if (elapsed(millis(), disconnect_started_, EQ3_DISCONNECT_TIMEOUT_MS)) {
+                ESP_LOGW(TAG, "Disconnect completion timed out");
+                connection_status_ = ConnectionStatus::WAIT_STATE;
+                reset_task_busy();
+            }
+            break;
         case ConnectionStatus::WAIT_STATE:
             this->disconnect_delay = 0;
         break;
@@ -303,30 +333,30 @@ void  EQ3NOSBLE::session_Processor(){
 }
 
 // Invio Comando alla valvola
-void EQ3NOSBLE::send_command() {
+bool EQ3NOSBLE::send_command() {
 
     // Verifica write_ch_
     if (!this->write_ch_) {
         ESP_LOGW(TAG, "write channel unavailable");
-        return;
+        return false;
     }
     bool now_connected = parent_->ble()->connected();
     if (!now_connected) {
         ESP_LOGW(TAG, "Not connected, command ignored");
-        return;
+        return false;
     }
 
     // Validazione lunghezzadisconnect_delay
     if (this->temp_cmd_len == 0 || this->temp_cmd_len > 23) {
         ESP_LOGW(TAG, "Command lenght error (%i)", temp_cmd_len);
-        return;
+        return false;
     }
 
     // Otteniamo il BLEClient tramite il parent EQ3BT
     auto *cli = this->parent_->ble();
     if (!cli) {
         ESP_LOGE(TAG, "BLEClient unavailable");
-        return;
+        return false;
     }
 
     // Eseguiamo la scrittura sulla characteristic
@@ -355,21 +385,13 @@ void EQ3NOSBLE::send_command() {
     } else {
         ESP_LOGW(TAG, "Send command error (err=%d)", err);
     }
+    return err == ESP_OK;
 }
 
 // 
 void EQ3NOSBLE::connectionWatchdog() {
-    
-    if(this->conn_task_busy_) {
-        if(this->ble_transport_watchdog > WATCHDOG_TIMEOUT) {
-            EQ3_D(TAG, "WATCHDOG_TIMEOUT");
-            reset_task_busy();
-            connection_status_ = ConnectionStatus::WAIT_STATE;  
-            local_copy.push_back(0xFF);
-            this->send_replay_to_app(); 
-            this->timer_connect = 0;
-            this->ble_transport_watchdog = 0;
-        }
+    if (conn_task_busy_ && session_deadline_.expired(millis())) {
+        fail_session_(session_deadline_.waiting_reply() ? "BLE reply timeout" : "BLE connect/discovery timeout");
     }
 }
 /*
@@ -385,7 +407,21 @@ void EQ3NOSBLE::set_parent(EQ3NOS *parent) {
     this->parent_ = parent;
 }
 
+void EQ3NOSBLE::cancel_transaction() { fail_session_("Application deadline exceeded"); }
 
+void EQ3NOSBLE::fail_session_(const char *reason) {
+    ESP_LOGW(TAG, "%s", reason);
+    session_deadline_.finish();
+    rcv_replay = false;
+    resolved = false;
+    local_copy.clear();
+    last_notify_data_.clear();
+    // Never manufacture a response from the previous transaction's buffer.
+    connection_status_ = ConnectionStatus::DISCONNECTING;
+    disconnect_started_ = millis();
+    conn_task_busy_ = true;
+    parent_->ble()->disconnect();
+    parent_->control_.transport_failed(reason);
+}
 }  // namespace eq3nos_bt
 }  // namespace esphome
-

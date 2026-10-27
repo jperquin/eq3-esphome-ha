@@ -6,7 +6,7 @@ GENERATE_LATEX         = NO
 RECURSIVE              = YES
 
 # Focus: only the actual component source + docs/manual pages
-INPUT                  = esphome/custom_components/eq3nos_bt docs README.md NOTES.md
+INPUT                  = components/eq3nos_bt docs README.md NOTES.md
 FILE_PATTERNS          = *.h *.hpp *.c *.cpp *.cc *.md *.dox
 
 # Explicitly exclude Python from the API
@@ -22,7 +22,7 @@ AUTOLINK_SUPPORT       = YES
 USE_MDFILE_AS_MAINPAGE = docs/mainpage.md
 
 # Make paths in the doc shorter/nicer
-STRIP_FROM_PATH        = esphome/custom_components/eq3nos_bt
+STRIP_FROM_PATH        = components/eq3nos_bt
 
 FULL_SIDEBAR           = YES
 GENERATE_TREEVIEW      = YES

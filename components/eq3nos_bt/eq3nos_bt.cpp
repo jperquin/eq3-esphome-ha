@@ -27,8 +27,6 @@ void EQ3NOS::setup() {
     ble_transport_.set_parent(this);      // parent per callback di connessione
     ble_transport_.con_task_init();
     
-    sync_target_temperature = true;  // sincronizza il display della temperatura target
-
     this->module_to_init = true;
 }
 
@@ -46,10 +44,11 @@ void EQ3NOS::loop() {
     if(this->module_to_init == true)
         module_init();
     
-    static uint32_t last_attempt = 0;
+    // Per-instance timer: multiple valves must not share a polling gate.
+
     
-	if (millis() - last_attempt < 1000) return; // timer 1 secondo
-    last_attempt = millis();
+	if (millis() - last_attempt_ < 1000) return; // timer 1 secondo
+    last_attempt_ = millis();
    
     this->control_.increment_timer_applic();
     this->ble_transport_.increment_timer_connect();
@@ -62,6 +61,7 @@ void EQ3NOS::send_command_to_ble_transport(const ConnCommand &cmd ) {
 		//this->get_eq3_time();
     EQ3_D(TAG, "Received command from application");
     bool error = ble_transport_.command_queuer(cmd);  
+    if (!error) control_.transport_failed("BLE command queue unavailable");
     EQ3_D(TAG, "%s command to connection.", error? "queued": "not queued" ); 
 }
 
@@ -70,6 +70,8 @@ void EQ3NOS::send_replay_to_control(const std::vector<uint8_t> &msg) {
     this->control_.handle_incoming_message(msg);
     EQ3_D(TAG, "replay received from application" ); 
 }
+
+void EQ3NOS::cancel_ble_transaction() { ble_transport_.cancel_transaction(); }
 
 // =================== MODE SELECTOR ===================
 void EQ3ModeSelect::control(const std::string &value) {
@@ -209,11 +211,12 @@ void EQ3NOS::publish_base_field(uint8_t vp, float tt,  Eq3Mode mode, bool lm, bo
         battery_low_sensor_->publish_state(this->battery_low);
     }
     
-    if(sync_target_temperature){
-        if (target_number_ != nullptr) {
-        sync_target_temperature = false;
+    // eq3-bench patch A (26-9-2026): number echo is niet meer one-shot.
+    // Elke bevestigde status-frame publiceert de target naar de number,
+    // zodat MQTT-discovery state_topic == sensor/target state_topic en de
+    // HA-side discovery-remap niet meer nodig is.
+    if (target_number_ != nullptr) {
         target_number_->publish_state(this->target_temperature);
-        }
     }
 
     watchdog_state_ = !watchdog_state_;
@@ -223,6 +226,7 @@ void EQ3NOS::publish_base_field(uint8_t vp, float tt,  Eq3Mode mode, bool lm, bo
 }
 
 esphome::ESPTime EQ3NOS::get_eq3_time(){
+    if (time_source_ == nullptr) return {};
 	auto now = time_source_->now();
 	EQ3_D(TAG, "Time now: %04d-%02d-%02d %02d:%02d:%02d",
          now.year, now.month, now.day_of_month,
@@ -232,4 +236,3 @@ esphome::ESPTime EQ3NOS::get_eq3_time(){
 
 }  // namespace eq3nos_bt
 }  // namespace esphome
-

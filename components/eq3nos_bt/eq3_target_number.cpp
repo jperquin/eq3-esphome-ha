@@ -10,8 +10,5 @@ void EQ3TargetNumber::control(float value) {
   }
 }
 
-
-
 }  // namespace eq3nos_bt
 }  // namespace esphome
-

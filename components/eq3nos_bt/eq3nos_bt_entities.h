@@ -57,4 +57,3 @@ class EQ3OffSwitch : public esphome::switch_::Switch {
 
 }  // namespace eq3nos_bt
 }  // namespace esphome
-

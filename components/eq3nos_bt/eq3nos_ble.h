@@ -8,6 +8,7 @@
 
 #include "esphome/components/ble_client/ble_client.h"
 #include "eq3nos_types.h"
+#include "eq3nos_session.h"
 
 /**
  * @file
@@ -25,7 +26,6 @@
  */
 
 #define DISCONNECT_NOW 3 // disconnecti dopo 3 sec
-#define WATCHDOG_TIMEOUT 15 // Errore dopo 15 sec senza risposta BLE
 
 namespace esphome {
 namespace eq3nos_bt {
@@ -48,6 +48,7 @@ enum class ConnectionStatus : uint8_t {
     WAIT_REPLAY,
     SEND_REPLAY_TO_APP,
     WAIT_TO_DISCONNECT,
+    DISCONNECTING,
     CONNECT_ERROR,
     GENERIC_DISCONNECT,
 };
@@ -82,7 +83,7 @@ public:
     void on_ble_event(esp_gattc_cb_event_t event,
 	    esp_gatt_if_t gatt_if,
         esp_ble_gattc_cb_param_t *param);
-    
+
     /**
      * @brief Assign EQ3 GATT handles manually when discovery is unreliable.
      *
@@ -106,6 +107,7 @@ public:
      */
     bool command_queuer(const ConnCommand &cmd);
 
+    void cancel_transaction();
     void increment_timer_connect(); // Timer per gestione task
   
    
@@ -146,7 +148,8 @@ private:
      *
      * @note Requires an active BLE connection and a resolved write handle.
      */
-    void send_command();
+    bool send_command();
+    void fail_session_(const char *reason);
     int command_dequeuer(); 
     void session_Processor();
 	void session_RAW(const uint8_t *data, size_t len);
@@ -154,7 +157,8 @@ private:
     uint8_t temp_cmd_data[16];
     size_t temp_cmd_len = 0;
 	uint32_t timer_connect = 0;
-    uint32_t ble_transport_watchdog = 0;
+    SessionDeadline session_deadline_;
+    uint32_t disconnect_started_{0};
     bool resolved = false;
     bool rcv_replay = false;
     bool conn_task_busy_ = false;
@@ -171,4 +175,3 @@ private:
 
 }  // namespace eq3nos
 }  // namespace esphome
-

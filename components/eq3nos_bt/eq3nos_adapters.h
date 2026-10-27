@@ -27,4 +27,3 @@ public:
     static std::tm decode(const std::vector<uint8_t>& value);
 };
 
-

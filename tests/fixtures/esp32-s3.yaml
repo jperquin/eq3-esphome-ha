@@ -1,0 +1,11 @@
+packages:
+  base: !include esp32.yaml
+
+substitutions:
+  test_name: eq3-validation-esp32-s3
+
+esp32:
+  board: esp32-s3-devkitc-1
+  flash_size: 16MB
+  framework:
+    type: esp-idf

@@ -18,4 +18,3 @@ std::string Eq3Serial::decode(const std::vector<uint8_t>& value) {
         result.push_back(static_cast<char>(b - 0x30));
     return result;
 }
-

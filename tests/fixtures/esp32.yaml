@@ -1,0 +1,72 @@
+substitutions:
+  test_name: eq3-validation-esp32
+
+esphome:
+  name: ${test_name}
+  build_flags: [-DEQ3_DEVLOG=1]
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+external_components:
+  - source:
+      type: local
+      path: ../../components
+    components: [eq3nos_bt]
+
+logger:
+  level: DEBUG
+
+wifi:
+  ssid: test-network
+  password: test-password
+
+mqtt:
+  broker: 192.0.2.1
+  idf_send_async: true
+  discover_ip: false
+
+time:
+  - platform: sntp
+    id: sntp_time
+
+esp32_ble_tracker:
+
+ble_client:
+  - id: eq3_client
+    mac_address: '00:1A:22:00:00:01'
+    auto_connect: false
+
+eq3nos_bt:
+  - id: valve_01
+    name: test_trv_01
+    mac_address: '00:1A:22:00:00:01'
+    ble_client_id: eq3_client
+    time_id: sntp_time
+    eq3_serial:
+      name: Serial
+    eq3_firmware:
+      name: Firmware
+    setpoint:
+      name: Setpoint
+    mode:
+      name: Mode
+    lock:
+      name: Lock
+    boost:
+      name: Boost
+    valve_position:
+      name: Valve position
+    target_temperature:
+      name: Target temperature
+    recovery_counter:
+      name: Recovery counter
+
+button:
+  - platform: template
+    name: Query identification
+    on_press:
+      - lambda: |-
+          id(valve_01).control_.request_identification();

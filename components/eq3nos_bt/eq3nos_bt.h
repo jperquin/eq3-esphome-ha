@@ -64,6 +64,10 @@ class EQ3NOS
 		
         ble_client::BLEClient* ble() { return ble_client::BLEClientNode::parent_; } 
 
+        // eq3-bench patch D (26-9-2026): getter voor de vacation-temperatuur
+        // (laatst bevestigde target); fallback-filters zitten in de aanroeper.
+        float get_target_temperature() const { return target_temperature; }
+
         // ----- Entity bindings (wiring from Python/YAML) -----
         // These setters are intentionally undocumented (simple pointer wiring).
         void set_serial_sensor(text_sensor::TextSensor *s) { eq3_serial_sensor_ = s; }
@@ -109,6 +113,7 @@ class EQ3NOS
         void publish_recovery_counter_sensor(uint16_t rc_);
 
         // ----- Internal messaging -----
+        void cancel_ble_transaction();
         void send_command_to_ble_transport(const ConnCommand &cmd);
 		void send_replay_to_control(const std::vector<uint8_t> &msg);
 
@@ -129,8 +134,7 @@ protected:
          // Measurements/state snapshot
         uint8_t valve_percent{0};
         float current_temperature{0.0f};
-        float target_temperature{0.0f};
-        float target_temperature_{20.0};
+        float target_temperature{20.0f};
 
         Eq3Mode mode_status{};
         bool lock_mode{};
@@ -165,12 +169,11 @@ protected:
 
 private:
 		EQ3NOSBLE ble_transport_;
+        uint32_t last_attempt_{0};
         bool module_to_init = true;
-        bool sync_target_temperature = true;
         bool ble_client_init_error = false;
       
 };
 
 }  // namespace eq3nos_bt
 }  // namespace esphome
-
